@@ -77,7 +77,7 @@ namespace ReleaseNotesMaker
             {
                 if (labels.Contains("bug"))
                 {
-                    return "Bugs";
+                    return "Bugs Fixed";
                 }
 
                 if (labels.Contains("feature"))
