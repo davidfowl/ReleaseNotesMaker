@@ -73,7 +73,7 @@ namespace ReleaseNotesMaker
 
         private static string Categorize(IEnumerable<string> labels)
         {
-            if (labels.Contains("4 - Done"))
+            if (labels.Contains("5 - Done"))
             {
                 if (labels.Contains("bug"))
                 {
