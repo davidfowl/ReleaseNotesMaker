@@ -124,6 +124,7 @@ namespace ReleaseNotesMaker
         {
             var httpClient = new HttpClient();
             httpClient.SetBasicAuthCredentials(user, password);
+            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Github Stuff");
             var issues = new List<JToken>();
             string resource = AddParameters("https://api.github.com/repos/signalr/signalr/issues", parameters);
             string lastResource = null;
