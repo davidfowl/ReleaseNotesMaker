@@ -18,15 +18,20 @@ namespace ReleaseNotesMaker
             var user = Environment.GetEnvironmentVariable("GITHUB_USER");
             var password = Environment.GetEnvironmentVariable("GITHUB_PASSWORD");
 
-            if (args.Length == 0)
+            if (args.Length < 2)
             {
-                Console.WriteLine("What Milestone?");
+                Console.WriteLine("Usage: [repoUrl] [milestone]");
+                Console.WriteLine("Sample:");
+                Console.WriteLine("{0}.exe signalr/signalr 2.1.1", typeof(Program).Assembly.GetName().Name);
                 return 1;
             }
 
+            string repoURL = args[0];
+            string milestone = args[1];
+
             try
             {
-                BuildReleaseNotesForMilestone(user, password, args[0]).Wait();
+                BuildReleaseNotesForMilestone(user, password, repoURL, milestone).Wait();
             }
             catch (Exception ex)
             {
@@ -37,15 +42,16 @@ namespace ReleaseNotesMaker
             return 0;
         }
 
-        private static async Task BuildReleaseNotesForMilestone(string user, string password, string milestone)
+        private static async Task BuildReleaseNotesForMilestone(string user, string password, string repoURL, string milestone)
         {
-            List<JToken> issues = await GetIssuesForMilestone(user, password);
+            List<JToken> issues = await GetIssuesForMilestone(user, password, repoURL);
 
             var issueGroups = from issue in issues
-                              let labels = from label in ((JArray)issue["labels"])
-                                           select label.Value<string>("name")
+                              let labels = (from label in issue["labels"]
+                                            select label.Value<string>("name")).ToList()
                               let category = Categorize(labels)
-                              where issue["milestone"].HasValues && issue["milestone"].Value<string>("title").Equals(milestone)
+                              let issueMilestone = issue["milestone"]
+                              where labels.Count > 0 && issueMilestone.HasValues && issueMilestone.Value<string>("title").Equals(milestone)
                               group issue by category into g
                               select g;
 
@@ -73,14 +79,14 @@ namespace ReleaseNotesMaker
 
         private static string Categorize(IEnumerable<string> labels)
         {
-            if (labels.Contains("5 - Done"))
+            if (labels.Any(l => l.Contains("Done")))
             {
                 if (labels.Contains("bug"))
                 {
                     return "Bugs Fixed";
                 }
 
-                if (labels.Contains("feature"))
+                if (labels.Contains("feature") || labels.Contains("enhancement"))
                 {
                     return "Features";
                 }
@@ -89,11 +95,16 @@ namespace ReleaseNotesMaker
             return String.Empty;
         }
 
-        private static async Task<List<JToken>> GetIssuesForMilestone(string user, string password)
+        private static async Task<List<JToken>> GetIssuesForMilestone(string user, string password, string repoURL)
         {
             // TODO: Make this smarter (have it pull updates from github and update issues.json)
             var issues = new List<JToken>();
-            if (!File.Exists("issues.json"))
+            var cacheFile = MakeCacheFile(repoURL);
+
+            var fi = new FileInfo(cacheFile);
+
+            if (!fi.Exists ||
+                DateTime.UtcNow.Subtract(fi.LastWriteTimeUtc) > TimeSpan.FromDays(1))
             {
                 var parameters = new Dictionary<string, string>
                 {
@@ -101,18 +112,18 @@ namespace ReleaseNotesMaker
                     { "per_page", "100" }
                 };
 
-                issues.AddRange(await GetIssues(user, password, parameters));
+                issues.AddRange(await GetIssues(user, password, repoURL, parameters));
 
                 if (issues.Count > 0)
                 {
-                    File.WriteAllText("issues.json", JsonConvert.SerializeObject(issues));
+                    File.WriteAllText(cacheFile, JsonConvert.SerializeObject(issues));
 
                     Console.WriteLine("Wrote ({0}) issues to issues.json", issues.Count);
                 }
             }
             else
             {
-                issues.AddRange(JsonConvert.DeserializeObject<List<JToken>>(File.ReadAllText("issues.json")));
+                issues.AddRange(JsonConvert.DeserializeObject<List<JToken>>(File.ReadAllText(cacheFile)));
 
                 Console.WriteLine("Read ({0}) issues from issues.json", issues.Count);
             }
@@ -120,13 +131,23 @@ namespace ReleaseNotesMaker
             return issues;
         }
 
-        private static async Task<IList<JToken>> GetIssues(string user, string password, Dictionary<string, string> parameters = null)
+        private static string MakeCacheFile(string repoURL)
+        {
+            string s = repoURL;
+            foreach (var ch in Path.GetInvalidFileNameChars())
+            {
+                s = s.Replace(ch, '_');
+            }
+            return s + "_issues.json";
+        }
+
+        private static async Task<IList<JToken>> GetIssues(string user, string password, string repoURL, Dictionary<string, string> parameters = null)
         {
             var httpClient = new HttpClient();
             httpClient.SetBasicAuthCredentials(user, password);
             httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Github Stuff");
             var issues = new List<JToken>();
-            string resource = AddParameters("https://api.github.com/repos/signalr/signalr/issues", parameters);
+            string resource = AddParameters("https://api.github.com/repos/" + repoURL + "/issues", parameters);
             string lastResource = null;
 
             while (true)
