@@ -179,9 +179,14 @@ namespace ReleaseNotesMaker
 
                     var resourceLinks = response.GetResourceLinks();
 
+                    if (!resourceLinks.Any())
+                    {
+                        break;
+                    }
+
                     resource = resourceLinks[0];
 
-                    if (String.IsNullOrEmpty(lastResource))
+                    if (string.IsNullOrEmpty(lastResource))
                     {
                         lastResource = resourceLinks[1];
                     }
@@ -241,9 +246,20 @@ namespace ReleaseNotesMaker
     {
         public static IList<string> GetResourceLinks(this HttpResponseMessage response)
         {
-            var link = response.Headers.GetValues("Link").First();
+            IEnumerable<string> linkHeaderValues;
+            string link = null;
+            if (response.Headers.TryGetValues("Link", out linkHeaderValues))
+            {
+                link = linkHeaderValues.FirstOrDefault();
+            }
 
             var links = new List<string>();
+
+            if (string.IsNullOrEmpty(link))
+            {
+                return links;
+            }
+
             foreach (Match match in Regex.Matches(link, "<(.+?)>"))
             {
                 links.Add(GetResourceUrlFromMatch(match));
